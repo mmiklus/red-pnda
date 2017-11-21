@@ -31,7 +31,7 @@ Please note that we have yet to test the OVA on other virtualized environments e
 
 ## Download
 
-The latest OVA image can be downloaded from [here](http://d5zjefk3wzew6.cloudfront.net/Red_PNDA-0.2.1.ova)
+The latest OVA image can be downloaded from [here](http://d5zjefk3wzew6.cloudfront.net/Red_PNDA-0.2.3.ova)
 
 ## MD5 checksum
 
@@ -75,11 +75,30 @@ Red-PNDA makes use the following open source components:
 
 ## Data Ingestion
 
+For instructions on how to use logstash to ingest data, refer to this [guide](logstash_guide.md)
+
 For detailed instructions on different data ingress methods, refer to this [guide](http://pnda.io/pnda-guide/producer/)
 
 ### Kafka
 
-Using Kafka with red-pnda is easy. By default, there are two kafka topics created for easy usage.
+#### How to connect to red-pnda kafka instance?
+
+**IMPORTANT**: To connect to the kafka instance running on red-pnda, you need to edit the config file and advertise your IP address like so:
+
+    sudo vim $KAFKA_HOME/config/server.properties
+
+Add these two lines at the end of the file. In this example, `192.168.33.10` is my red-pnda IP address:
+
+    listeners=PLAINTEXT://192.168.33.10:9092
+    advertised.listeners=PLAINTEXT://192.168.33.10:9092
+
+Save and quit. Then restart kafka service.
+
+    sudo service kafka restart
+
+#### Are there any default topics which I can use?
+
+By default, there are two kafka topics created for easy usage.
 
 1. raw.log.localtest
 2. avro.log.localtest
@@ -130,7 +149,7 @@ Default login credentials for Grafana is `pnda/pndapnda`
 
 ## Local Documentation
 
-A copy of this documentation is also available in the Red PNDA OVA at `/home/pnda/red-pnda-master`.
+A copy of this documentation is also available in the Red PNDA OVA at `/home/pnda/red-pnda-develop`.
 
 ## Shutdown
 

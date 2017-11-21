@@ -1,4 +1,8 @@
 #!/bin/bash
+set -e
+set -x
+
+source utils.sh
 
 if [ $# -eq 0 ]
   then
@@ -7,13 +11,34 @@ if [ $# -eq 0 ]
 fi
 
 pwd=$(pwd)
-# export eth0 address for other scripts. This is assuming eth1 is the interface which is reachable from host network
+
+if [[ "$pwd" == *scripts ]]
+then
+    # do nothing
+	echo 
+else
+    pwd+="/scripts"
+fi
+
+echo "present working dir : $pwd" 
+
+echo "HBASE_HOME=/usr/local/$HBASE_VERSION" >> /etc/environment
+echo "KAFKA_HOME=/usr/local/$KAFKA_VERSION" >> /etc/environment
+echo "SCALA_HOME=/usr/local/src/scala" >> /etc/environment
+echo "SPARK_HOME=/usr/local/spark" >> /etc/environment
+echo "JAVA_HOME=/usr/lib/jvm/java-8-oracle" >> /etc/environment
+echo "JMXPROXY_HOME=$MAIN_DIR/jmxproxy" >> /etc/environment
+
+source /etc/environment
+
+
+# get IP address
 ip=$(/sbin/ip -o -4 addr list $1 | awk '{print $4}' | cut -d/ -f1)
 
 sudo apt-get update
 
 # base working dir
-sudo mkdir /opt/pnda
+sudo mkdir /opt/pnda || true
 
 # install nginx
 sudo apt-get install -y nginx
@@ -46,38 +71,39 @@ sudo apt-get install -y unzip
 sudo apt-get install -y zookeeperd
 
 
-if [ ! -d /usr/local/scala ]; then
+if [ ! -d $SCALA_HOME ]; then
 
-	# install scala 2.11.7
-	wget http://www.scala-lang.org/files/archive/scala-2.11.7.tgz
-	sudo mkdir /usr/local/src/scala
-	sudo tar xvf scala-2.11.7.tgz -C /usr/local/src/scala/
-
+	# install scala
+	wget http://www.scala-lang.org/files/archive/$SCALA_VERSION.tgz
+	sudo tar xvf $SCALA_VERSION.tgz -C /usr/local/
+	mv /usr/local/$SCALA_VERSION $SCALA_HOME
 	# remove scala tar file
-	rm scala-2.11.7.tgz
+	rm $SCALA_VERSION.tgz
 fi
 
 # add to PATH env variable
-echo "export PATH=/usr/local/src/scala/scala-2.11.7/bin:$PATH" >> /etc/profile
+echo "PATH=$SCALA_HOME/bin:$PATH" >> /etc/environment
 
-source /etc/profile
+source /etc/environment
 
-if [ ! -d /usr/local/spark-1.6.1-bin-hadoop2.6 ]; then
+if [ ! -d $SPARK_HOME ]; then
 
 	# install spark 1.6.1 standalone
-	wget https://d3kbcqa49mib13.cloudfront.net/spark-1.6.1-bin-hadoop2.6.tgz
-	tar xzf spark-1.6.1-bin-hadoop2.6.tgz -C /usr/local/
-
+	wget https://d3kbcqa49mib13.cloudfront.net/$SPARK_VERSION.tgz
+	tar xzf $SPARK_VERSION.tgz -C /usr/local/
+	mv /usr/local/$SPARK_VERSION $SPARK_HOME
 	# remove spark tar file
-	rm spark-1.6.1-bin-hadoop2.6.tgz
+	rm $SPARK_VERSION.tgz
 fi
 
 # add to PATH env variable
-echo "export PATH=/usr/local/spark-1.6.1-bin-hadoop2.6/bin:$PATH" >> /etc/profile
+echo "PATH=$SPARK_HOME/bin:$PATH" >> /etc/environment
 
-source /etc/profile
+source /etc/environment
 
 sudo pip install virtualenv
+
+set +e
 
 # if proxy env variable is set, change the npm config
 if [[ ! (-z "${http_proxy}") || ! (-z "${HTTP_PROXY}") ]]; then
@@ -87,69 +113,73 @@ else
 	echo "No proxy required for npm"
 fi
 
+set -e
+
+cd $pwd/components
+
 # install console-backend-utils
-bash $pwd/scripts/console-backend.sh $pwd
+bash console-backend.sh $pwd
 
 # install console-frontend
-bash $pwd/scripts/console-frontend.sh $pwd
+bash console-frontend.sh $pwd
 
 # install jupyter
-bash $pwd/scripts/jupyter.sh $pwd
+bash jupyter.sh $pwd
 
 # install hbase
-bash $pwd/scripts/hbase.sh $pwd
+bash hbase.sh $pwd
 
 # install kafka
-bash $pwd/scripts/kafka.sh $pwd
+bash kafka.sh $pwd $ip
 
 # install jmxproxy
-bash $pwd/scripts/jmxproxy.sh $pwd
+bash jmxproxy.sh $pwd
 
 # install platform testing general
-bash $pwd/scripts/platform-testing.sh $pwd
+bash platform-testing.sh $pwd
 
 # install opentsdb
-bash $pwd/scripts/opentsdb.sh $pwd
+bash opentsdb.sh $pwd
 
 # install grafana
-bash $pwd/scripts/grafana-server.sh $pwd
+bash grafana-server.sh $pwd $ip
 
 # install kafka-manager
-bash $pwd/scripts/kafka-manager.sh $pwd
+bash kafka-manager.sh $pwd
 
 # start opentsdb after a delay of 15 seconds and start kafka-manager
-cp $pwd/scripts/files/opentsdb-kafka-manager-boot.sh /opt/pnda
+cp files/opentsdb-kafka-manager-boot.sh /opt/pnda
 
 # install crontab
 crontab -l > mycron
 #echo new cron into cron file
-echo "@reboot sleep 10 && /usr/local/hbase-1.2.0/bin/start-hbase.sh" >> mycron
+echo "@reboot sleep 10 && $HBASE_HOME/bin/start-hbase.sh" >> mycron
 echo "@reboot bash /opt/pnda/opentsdb-kafka-manager-boot.sh" >> mycron
 # start spark master & slave worker on reboot
 host_name=$(hostname)
-echo "@reboot /usr/local/spark-1.6.1-bin-hadoop2.6/sbin/start-master.sh && /usr/local/spark-1.6.1-bin-hadoop2.6/sbin/start-slave.sh spark://$host_name:7077" >> mycron
+echo "@reboot $SPARK_HOME/sbin/start-master.sh && $SPARK_HOME/sbin/start-slave.sh spark://$host_name:7077" >> mycron
 
 #install new cron file
 crontab mycron
 rm mycron
 
-bash $pwd/scripts/kafka-consumer.sh $pwd
+bash kafka-consumer.sh $pwd $ip
 
-# install useful libs
+# install useful python libraries
 sudo pip install pandas
 sudo pip install matplotlib
 sudo pip install scikit-learn
 
-bash $pwd/scripts/platform-libraries.sh
+bash platform-libraries.sh $pwd
 
-cp $pwd/scripts/files/zk-opentsdb-restart.sh /opt/pnda
+cp files/zk-opentsdb-restart.sh /opt/pnda
 
-cp $pwd/scripts/assign-ip.sh /opt/pnda
+cp assign-ip.sh /opt/pnda
 
 sudo bash /opt/pnda/assign-ip.sh $1
 
 echo "#####################################################"
 echo
 echo
-echo "Your Red-PNDA is successfully installed. Go to http://$ip on your browser to view the console!"
+echo "Your Red-PNDA is successfully installed. Please reboot your machine and go to http://$ip on your browser to view the PNDA console!"
 
